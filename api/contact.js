@@ -1,23 +1,44 @@
 export const config = { runtime: 'edge' };
 
+function badRequest(message) {
+	return new Response(message, { status: 400 });
+}
+
 export default async function handler(req) {
 	if (req.method !== 'POST') {
 		return new Response('Method Not Allowed', { status: 405 });
 	}
 
 	try {
-		const formData = await req.formData();
-		const name = (formData.get('name') || '').toString().trim();
-		const email = (formData.get('email') || '').toString().trim();
-		const subject = (formData.get('subject') || '').toString().trim();
-		const message = (formData.get('message') || '').toString().trim();
+		const contentType = req.headers.get('content-type') || '';
+		let name = '';
+		let email = '';
+		let subject = '';
+		let message = '';
+
+		if (contentType.includes('application/x-www-form-urlencoded')) {
+			const text = await req.text();
+			const params = new URLSearchParams(text);
+			name = (params.get('name') || '').toString().trim();
+			email = (params.get('email') || '').toString().trim();
+			subject = (params.get('subject') || '').toString().trim();
+			message = (params.get('message') || '').toString().trim();
+		} else if (contentType.includes('multipart/form-data')) {
+			const formData = await req.formData();
+			name = (formData.get('name') || '').toString().trim();
+			email = (formData.get('email') || '').toString().trim();
+			subject = (formData.get('subject') || '').toString().trim();
+			message = (formData.get('message') || '').toString().trim();
+		} else {
+			return badRequest('Unsupported Content-Type.');
+		}
 
 		if (!name || !email || !subject || !message) {
-			return new Response('All fields are required.', { status: 400 });
+			return badRequest('All fields are required.');
 		}
 		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 		if (!emailRegex.test(email)) {
-			return new Response('Invalid email address.', { status: 400 });
+			return badRequest('Invalid email address.');
 		}
 
 		const toEmail = process.env.TO_EMAIL;
@@ -40,16 +61,16 @@ export default async function handler(req) {
 		const resendResponse = await fetch('https://api.resend.com/emails', {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${resendApiKey}`,
-				'Content-Type': 'application/json'
+				Authorization: `Bearer ${resendApiKey}`,
+				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
 				from: 'Portfolio Contact <onboarding@resend.dev>',
-				to: toEmail,
+				to: [toEmail],
 				subject: `New contact form message: ${subject}`,
 				text: bodyText,
-				reply_to: `${name} <${email}>`
-			})
+				reply_to: `${name} <${email}>`,
+			}),
 		});
 
 		if (!resendResponse.ok) {
