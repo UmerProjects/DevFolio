@@ -1,41 +1,59 @@
 <?php
-  /**
-  * Requires the "PHP Email Form" library
-  * The "PHP Email Form" library is available only in the pro version of the template
-  * The library should be uploaded to: vendor/php-email-form/php-email-form.php
-  * For more info and help: https://bootstrapmade.com/php-email-form/
-  */
+// Email recipient (replace with your actual email address)
+$receiving_email_address = 'uqazi844@gmail.com';
 
-  // Replace contact@example.com with your real receiving email address
-  $receiving_email_address = 'contact@example.com';
+// Check if the form is submitted
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+	// Collect and sanitize form inputs
+	$name = isset($_POST['name']) ? htmlspecialchars(strip_tags(trim($_POST['name']))) : '';
+	$email = isset($_POST['email']) ? htmlspecialchars(strip_tags(trim($_POST['email']))) : '';
+	$subject = isset($_POST['subject']) ? htmlspecialchars(strip_tags(trim($_POST['subject']))) : '';
+	$message = isset($_POST['message']) ? htmlspecialchars(strip_tags(trim($_POST['message']))) : '';
 
-  if( file_exists($php_email_form = '../assets/vendor/php-email-form/php-email-form.php' )) {
-    include( $php_email_form );
-  } else {
-    die( 'Unable to load the "PHP Email Form" Library!');
-  }
+	// Validate the inputs
+	if (empty($name) || empty($email) || empty($subject) || empty($message)) {
+		echo "All fields are required.";
+		exit;
+	}
+	if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+		echo "Invalid email address.";
+		exit;
+	}
 
-  $contact = new PHP_Email_Form;
-  $contact->ajax = true;
-  
-  $contact->to = $receiving_email_address;
-  $contact->from_name = $_POST['name'];
-  $contact->from_email = $_POST['email'];
-  $contact->subject = $_POST['subject'];
+	// Build email
+	$domain = isset($_SERVER['SERVER_NAME']) ? preg_replace('/^www\./', '', $_SERVER['SERVER_NAME']) : 'localhost';
+	$fromAddress = 'no-reply@' . $domain;
+	$emailSubject = "New contact form message: " . $subject;
+	$bodyLines = [
+		"You have received a new message from your website contact form.",
+		"",
+		"Name: " . $name,
+		"Email: " . $email,
+		"Subject: " . $subject,
+		"",
+		"Message:",
+		$message,
+		"",
+		"Sender IP: " . (isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown'),
+	];
+	$body = implode("\r\n", $bodyLines);
 
-  // Uncomment below code if you want to use SMTP to send emails. You need to enter your correct SMTP credentials
-  /*
-  $contact->smtp = array(
-    'host' => 'example.com',
-    'username' => 'example',
-    'password' => 'pass',
-    'port' => '587'
-  );
-  */
+	// Email headers (use domain From and set Reply-To to the user for better deliverability)
+	$headers = "From: Website Contact <{$fromAddress}>\r\n";
+	$headers .= "Reply-To: {$name} <{$email}>\r\n";
+	$headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+	$headers .= "X-Mailer: PHP/" . phpversion();
 
-  $contact->add_message( $_POST['name'], 'From');
-  $contact->add_message( $_POST['email'], 'Email');
-  $contact->add_message( $_POST['message'], 'Message', 10);
+	// Send the email
+	$mail_sent = @mail($receiving_email_address, $emailSubject, $body, $headers);
 
-  echo $contact->send();
+	if ($mail_sent) {
+		// The frontend validate.js expects exactly 'OK' on success
+		echo 'OK';
+	} else {
+		echo "Failed to send your message. This server may not be configured to send mail.";
+	}
+} else {
+	echo "Invalid request.";
+}
 ?>
