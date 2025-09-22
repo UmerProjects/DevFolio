@@ -1,0 +1,10 @@
+{
+	"name": "devfolio-portfolio",
+	"private": true,
+	"version": "1.0.0",
+	"description": "Portfolio site contact form backend on Vercel",
+	"license": "MIT",
+	"dependencies": {
+		"nodemailer": "^6.9.13"
+	}
+}

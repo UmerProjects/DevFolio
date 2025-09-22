@@ -1,85 +1,73 @@
-export const config = { runtime: 'edge' };
+const nodemailer = require('nodemailer');
 
-function badRequest(message) {
-	return new Response(message, { status: 400 });
-}
-
-export default async function handler(req) {
+module.exports = async (req, res) => {
 	if (req.method !== 'POST') {
-		return new Response('Method Not Allowed', { status: 405 });
+		return res.status(405).send('Method Not Allowed');
 	}
 
 	try {
-		const contentType = req.headers.get('content-type') || '';
 		let name = '';
 		let email = '';
 		let subject = '';
 		let message = '';
+		const contentType = req.headers['content-type'] || '';
 
-		if (contentType.includes('application/x-www-form-urlencoded')) {
-			const text = await req.text();
-			const params = new URLSearchParams(text);
-			name = (params.get('name') || '').toString().trim();
-			email = (params.get('email') || '').toString().trim();
-			subject = (params.get('subject') || '').toString().trim();
-			message = (params.get('message') || '').toString().trim();
-		} else if (contentType.includes('multipart/form-data')) {
-			const formData = await req.formData();
-			name = (formData.get('name') || '').toString().trim();
-			email = (formData.get('email') || '').toString().trim();
-			subject = (formData.get('subject') || '').toString().trim();
-			message = (formData.get('message') || '').toString().trim();
+		if (contentType.includes('application/json')) {
+			({ name = '', email = '', subject = '', message = '' } = req.body || {});
+		} else if (contentType.includes('application/x-www-form-urlencoded')) {
+			({ name = '', email = '', subject = '', message = '' } = req.body || {});
 		} else {
-			return badRequest('Unsupported Content-Type.');
+			return res.status(400).send('Unsupported Content-Type.');
 		}
 
+		name = String(name || '').trim();
+		email = String(email || '').trim();
+		subject = String(subject || '').trim();
+		message = String(message || '').trim();
+
 		if (!name || !email || !subject || !message) {
-			return badRequest('All fields are required.');
+			return res.status(400).send('All fields are required.');
 		}
 		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 		if (!emailRegex.test(email)) {
-			return badRequest('Invalid email address.');
+			return res.status(400).send('Invalid email address.');
 		}
 
 		const toEmail = process.env.TO_EMAIL;
-		const resendApiKey = process.env.RESEND_API_KEY;
-		if (!toEmail || !resendApiKey) {
-			return new Response('Server not configured for email.', { status: 500 });
+		const smtpHost = process.env.SMTP_HOST;
+		const smtpPort = Number(process.env.SMTP_PORT || 587);
+		const smtpUser = process.env.SMTP_USER;
+		const smtpPass = process.env.SMTP_PASS;
+		if (!toEmail || !smtpHost || !smtpUser || !smtpPass) {
+			return res.status(500).send('Server not configured for email.');
 		}
 
-		const bodyText = [
-			`You have received a new message from your website contact form.`,
-			'',
-			`Name: ${name}`,
-			`Email: ${email}`,
-			`Subject: ${subject}`,
-			'',
-			'Message:',
-			message,
-		].join('\n');
-
-		const resendResponse = await fetch('https://api.resend.com/emails', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${resendApiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				from: 'Portfolio Contact <onboarding@resend.dev>',
-				to: [toEmail],
-				subject: `New contact form message: ${subject}`,
-				text: bodyText,
-				reply_to: `${name} <${email}>`,
-			}),
+		const transporter = nodemailer.createTransport({
+			host: smtpHost,
+			port: smtpPort,
+			secure: smtpPort === 465,
+			auth: { user: smtpUser, pass: smtpPass }
 		});
 
-		if (!resendResponse.ok) {
-			const errText = await resendResponse.text();
-			return new Response(errText || 'Failed to send your message.', { status: 502 });
-		}
+		await transporter.sendMail({
+			from: `Portfolio Contact <${smtpUser}>`,
+			to: toEmail,
+			subject: `New contact form message: ${subject}`,
+			text: [
+				`You have received a new message from your website contact form.`,
+				'',
+				`Name: ${name}`,
+				`Email: ${email}`,
+				`Subject: ${subject}`,
+				'',
+				'Message:',
+				message
+			].join('\n'),
+			replyTo: `${name} <${email}>`
+		});
 
-		return new Response('OK', { status: 200 });
+		return res.status(200).send('OK');
 	} catch (err) {
-		return new Response(err?.message || 'Unexpected error.', { status: 500 });
+		return res.status(500).send(err?.message || 'Failed to send your message.');
 	}
-}
+};
